@@ -10,13 +10,14 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 
 @app.route('/')
 def home():
-    return {"status": "conectado", "mensaje": "Hola desde la Raspberry Pi 4"}
+    return {"status": "conectado", "mensaje": "Servicio activo"}
 
 
 
@@ -98,17 +99,23 @@ def getUser():
 def checkUser():
     data = request.get_json()
     id_buscado = data.get("id")
+    username = data.get("username")
 
     try:
-        response = supabase.table("usuarios").select("*").eq("id", id_buscado).execute()
+        response = supabase.table("usuarios") \
+            .select("*") \
+            .eq("id", id_buscado) \
+            .eq("username", username) \
+            .execute()
         
         if response.data:
             return jsonify({"status": "success", "data": response.data[0]}), 200
         else:
-            return jsonify({"status": "error", "message": "Usuario no encontrado"}), 404
+            return jsonify({"status": "error", "message": "Credenciales no válidas"}), 404
             
     except Exception as e:
          return jsonify({"status": "error", "message": str(e)}), 400
+
 
 
 @app.route('/venus/addEjercicio', methods=['POST'])
@@ -128,6 +135,31 @@ def addEjercicio():
             "message": "Lista de ejercicios actualizada", 
             "data": response.data
         }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+@app.route('/venus/editProfile', methods=['POST'])
+def editProfile():
+    data = request.get_json()
+  
+    id_buscado = data.pop("id", None) 
+    
+    if not id_buscado:
+        return jsonify({"status": "error", "message": "Falta el ID del usuario"}), 400
+
+    try:
+        response = supabase.table("usuarios").update(data).eq("id", id_buscado).execute()
+        
+        if not response.data:
+            return jsonify({"status": "error", "message": "Usuario no encontrado"}), 404
+
+        return jsonify({
+            "status": "success", 
+            "message": "Perfil actualizado correctamente", 
+            "data": response.data[0]
+        }), 200
+        
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 

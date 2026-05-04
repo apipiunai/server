@@ -11,6 +11,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 
+
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -186,6 +187,47 @@ def clearEjercicio():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
+@app.route('/venus/clearLesion', methods=['POST'])
+def clearLesion():
+    data = request.get_json()
+    user_id = data.get("user_id") 
+    lesiones = data.get("lesiones") 
+
+    try:
+        # Change "users" to "usuarios"
+        response = supabase.table("usuarios").update({
+            "lesiones": lesiones 
+        }).eq("id", user_id).execute()
+
+        return jsonify({
+            "status": "success", 
+            "message": "Lista de lesiones actualizada", 
+            "data": response.data
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+@app.route('/venus/addLesion', methods=['POST'])
+def addLesion():
+    data = request.get_json()
+    user_id = data.get("user_id") 
+    lesiones = data.get("lesiones") 
+
+    try:
+        # Change "users" to "usuarios"
+        response = supabase.table("usuarios").update({
+            "lesiones": lesiones 
+        }).eq("id", user_id).execute()
+
+        return jsonify({
+            "status": "success", 
+            "message": "Lista de lesiones actualizada", 
+            "data": response.data
+        }), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
 # ==========================================
 # EJERCICIOS
 # ==========================================
@@ -212,6 +254,18 @@ def insertEjercicio():
     try:
         response = supabase.table("ejercicios").insert(data).execute()
         return jsonify({"status": "success", "message": "Ejercicio insertado", "data": response.data}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+
+@app.route('/venus/insertEjercicios', methods=['POST'])
+def insertEjercicios():
+    data = request.get_json()
+    
+    try:
+        response = supabase.table("ejercicios").insert(data).execute()
+        return jsonify({"status": "success", "message": "Ejercicios insertados", "data": response.data}), 201
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
@@ -268,6 +322,16 @@ def insertDieta():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
+
+@app.route('/venus/insertDietas', methods=['POST'])
+def insertDietas():
+    data = request.get_json()
+    
+    try:
+        response = supabase.table("dietas").insert(data).execute()
+        return jsonify({"status": "success", "message": "Dietas insertadas", "data": response.data}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 @app.route('/venus/updateDieta', methods=['POST'])
 def updateDieta():

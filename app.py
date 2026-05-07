@@ -1,4 +1,5 @@
-from flask import Flask, jsonify, request, os
+from flask import Flask, jsonify, request
+import os
 from flask_cors import CORS 
 from supabase import create_client, Client
 from werkzeug.security import generate_password_hash, check_password_hash

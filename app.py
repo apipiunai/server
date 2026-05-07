@@ -1,10 +1,14 @@
 from flask import Flask, jsonify, request, send_file, after_this_request, render_template
-import os
 from flask_cors import CORS 
+import os
 from supabase import create_client, Client
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+
+
 
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -25,29 +29,42 @@ def home():
 # USUARIOS / AUTENTICACIÓN
 # ==========================================
 
+def sanitize_user(user):
+    if not isinstance(user, dict):
+        return user
+    sanitized = dict(user)
+    sanitized.pop("password", None)
+    return sanitized
+
 @app.route('/venus/login', methods=['POST'])
 def login():
     data = request.get_json()
-    username = data.get("username")
+    email = data.get("email")
     password = data.get("password")
+
+    if not email or not password:
+        return jsonify({"status": "error", "message": "Faltan datos (email o password)"}), 400
 
     try:
         response = supabase.table("usuarios") \
             .select("*") \
-            .match({"username": username, "password": password}) \
+            .eq("email", email) \
             .execute()
 
-        if response.data and len(response.data) > 0:
-            return jsonify({
-                "status": "success",
-                "message": "Login correcto",
-                "data": response.data[0]
-            }), 200
-        else:
-            return jsonify({
-                "status": "error",
-                "message": "Usuario o contraseña incorrectos"
-            }), 401
+        if not response.data or len(response.data) == 0:
+            return jsonify({"status": "error", "message": "Usuario o contraseña incorrectos"}), 401
+
+        user = response.data[0]
+        stored_password = user.get("password")
+
+        if not stored_password or not check_password_hash(stored_password, password):
+            return jsonify({"status": "error", "message": "Usuario o contraseña incorrectos"}), 401
+
+        return jsonify({
+            "status": "success",
+            "message": "Login correcto",
+            "data": sanitize_user(user)
+        }), 200
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -57,19 +74,23 @@ def login():
 def register():
     data = request.get_json()
     username = data.get("username")
+    email = data.get("email")
     password = data.get("password")
 
     if not username or not password:
          return jsonify({"status": "error", "message": "Faltan datos (username o password)"}), 400
 
+    hashed_password = generate_password_hash(password)
     user = {
         "username": username,
-        "password": password
+        "password": hashed_password,
+        "email": email,
     }
 
     try:
         response = supabase.table("usuarios").insert(user).execute()
-        return jsonify({"status": "success", "message": "Usuario registrado correctamente", "data": response.data}), 201
+        inserted = response.data[0] if response.data else {}
+        return jsonify({"status": "success", "message": "Usuario registrado correctamente", "data": sanitize_user(inserted)}), 201
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -87,7 +108,7 @@ def getUser():
         response = supabase.table("usuarios").select("*").eq("id", id_buscado).execute()
         
         if response.data:
-            return jsonify({"status": "success", "data": response.data[0]}), 200
+            return jsonify({"status": "success", "data": sanitize_user(response.data[0])}), 200
         else:
             return jsonify({"status": "error", "message": "Usuario no encontrado"}), 404
             
@@ -109,7 +130,7 @@ def checkUser():
             .execute()
         
         if response.data:
-            return jsonify({"status": "success", "data": response.data[0]}), 200
+            return jsonify({"status": "success", "data": sanitize_user(response.data[0])}), 200
         else:
             return jsonify({"status": "error", "message": "Credenciales no válidas"}), 404
             
@@ -258,16 +279,6 @@ def insertEjercicio():
 
 
 
-@app.route('/venus/insertEjercicios', methods=['POST'])
-def insertEjercicios():
-    data = request.get_json()
-    
-    try:
-        response = supabase.table("ejercicios").insert(data).execute()
-        return jsonify({"status": "success", "message": "Ejercicios insertados", "data": response.data}), 201
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
-
 
 @app.route('/venus/updateEjercicio', methods=['POST'])
 def updateEjercicio():
@@ -322,15 +333,6 @@ def insertDieta():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
-@app.route('/venus/insertDietas', methods=['POST'])
-def insertDietas():
-    data = request.get_json()
-    
-    try:
-        response = supabase.table("dietas").insert(data).execute()
-        return jsonify({"status": "success", "message": "Dietas insertadas", "data": response.data}), 201
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
 
 @app.route('/venus/updateDieta', methods=['POST'])
 def updateDieta():
@@ -356,6 +358,191 @@ def deleteDieta():
 
 
 
+
+# ==========================================
+# COACH
+# ==========================================
+
+
+
+
+@app.route('/venus/getAlumnos', methods=['POST'])
+def getAlumnos():
+    data = request.get_json()  
+    coach_id = data.get("coach_id")
+
+    if not coach_id:
+        return jsonify({"status": "error", "message": "Falta el ID del coach"}), 400
+
+    try:
+        response = supabase.table("alumno_coach") \
+            .select("email_alumno") \
+            .eq("id_coach", coach_id) \
+            .execute()
+
+        alumno_emails = [item["email_alumno"] for item in response.data]
+        
+        if not alumno_emails:
+            return jsonify({
+                "status": "success", 
+                "message": "No se encontraron alumnos", 
+                "data": []
+            }), 200
+        
+        alumnos_response = supabase.table("usuarios") \
+            .select("*") \
+            .in_("email", alumno_emails) \
+            .execute()
+
+        alumnos = [sanitize_user(item) for item in alumnos_response.data or []]
+        
+        # Respuesta exitosa
+        return jsonify({
+            "status": "success", 
+            "message": f"Se encontraron {len(alumnos)} alumnos", 
+            "data": alumnos
+        }), 200
+
+    except Exception as e:
+        # Captura de errores (Base de datos, conexión, etc.)
+        return jsonify({
+            "status": "error", 
+            "message": f"Error en el servidor: {str(e)}"
+        }), 500
+    
+
+@app.route('/venus/deleteAlumno', methods=['POST'])
+def deleteAlumno():
+    data = request.get_json()
+    id_coach = data.get("id_coach")
+    email_alumno = data.get("email_alumno")
+
+    print("ID Coach:", id_coach)
+    print("Email Alumno:", email_alumno)
+    
+    try:
+        response = supabase.table("alumno_coach").delete()\
+            .eq("id_coach", id_coach)\
+            .eq("email_alumno", email_alumno)\
+            .execute()
+        return jsonify({"status": "success", "message": "Alumno eliminado correctamente"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+@app.route('/venus/getAlumno', methods=['POST'])
+def getAlumno():
+    data = request.get_json()
+    email_alumno = data.get("email_alumno")
+
+    if not email_alumno:
+        return jsonify({"status": "error", "message": "Falta el email_alumno"}), 400
+
+    try:
+        response = supabase.table("usuarios").select("*").eq("email", email_alumno).execute()
+        alumno = response.data[0] if response.data else None
+        return jsonify({"status": "success", "message": "Alumno obtenido", "data": sanitize_user(alumno) if alumno else None}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+
+@app.route('/venus/invitarAlumno', methods=['POST'])
+def invitarAlumno():
+    data = request.get_json()
+    id_coach = data.get("id_coach")
+    email = data.get("email")
+
+    if not email:
+         return jsonify({"status": "error", "message": "Falta el email"}), 400
+
+
+
+    try:
+
+        already_invited = supabase.table("invitaciones").select("*").eq("email_alumno", email).eq("id_coach", id_coach).execute()
+
+        if already_invited.data:
+            return jsonify({"status": "error", "message": "El alumno ya ha sido invitado por este coach"}), 400
+        
+        existing_user = supabase.table("usuarios").select("*").eq("email", email).execute()
+
+        if not existing_user.data:
+            return jsonify({"status": "error", "message": "No existe un usuario registrado con ese email"}), 400
+
+        response = supabase.table("invitaciones").insert({"id_coach": id_coach, "email_alumno": email}).execute()
+        inserted = response.data[0] if response.data else {}
+        return jsonify({"status": "success", "message": "Alumno invitado correctamente", "data": sanitize_user(inserted)}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+@app.route('/venus/aceptarInvitacion', methods=['POST'])
+def aceptarInvitacion():
+    data = request.get_json()
+    id_coach = data.get("id_coach")
+    email_alumno = data.get("email_alumno")
+
+    if not email_alumno:
+         return jsonify({"status": "error", "message": "Falta el email_alumno"}), 400
+
+    try:
+
+        response = supabase.table("alumno_coach").insert({"id_coach": id_coach, "email_alumno": email_alumno}).execute()
+        inserted = response.data[0] if response.data else {}
+
+        if(inserted):
+            supabase.table("invitaciones").delete()\
+                .eq("id_coach", id_coach)\
+                .eq("email_alumno", email_alumno)\
+                .execute()
+        
+
+
+        return jsonify({"status": "success", "message": "Relacion coach alumno aceptada correctamente", "data": inserted}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+    
+@app.route('/venus/getInvitaciones', methods=['POST'])
+def get_invitaciones():
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"status": "error", "message": "Falta el email"}), 400
+
+    try:
+        invitations = supabase.table("invitaciones") \
+            .select("*") \
+            .eq("email_alumno", email) \
+            .execute()
+
+        if not invitations.data:
+            return jsonify({"status": "success", "data": []}), 200
+
+        result = []
+        for invitation in invitations.data:
+            coach_response = supabase.table("usuarios") \
+                .select("email") \
+                .eq("id", invitation.get("id_coach")) \
+                .execute()
+            
+            if coach_response.data:
+                result.append({
+                    "id_invitacion": invitation.get("id_invitacion"),
+                    "id_coach": invitation.get("id_coach"),
+                    "coach_email": coach_response.data[0].get("email"),
+                })
+
+        return jsonify({
+            "status": "success",
+            "data": result
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 
 if __name__ == '__main__':

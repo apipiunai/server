@@ -20,7 +20,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.route('/')
 def home():
-    return {"status": "conectado", "mensaje": "Servicio activo"}
+    return {"status": "conectado", "mensaje": "Servicio activo 07-06-2024"}, 200
 
 
 

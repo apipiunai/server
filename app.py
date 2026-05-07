@@ -465,6 +465,11 @@ def invitarAlumno():
         if already_invited.data:
             return jsonify({"status": "error", "message": "El alumno ya ha sido invitado por este coach"}), 400
         
+        already_coached = supabase.table("alumno_coach").select("*").eq("email_alumno", email).eq("id_coach", id_coach).execute()
+        
+        if already_coached.data:
+            return jsonify({"status": "error", "message": "Ya es alumno de este coach"}), 400
+        
         existing_user = supabase.table("usuarios").select("*").eq("email", email).execute()
 
         if not existing_user.data:

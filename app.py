@@ -14,7 +14,6 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
@@ -154,7 +153,7 @@ def addEjercicio():
         return jsonify({
             "status": "success", 
             "message": "Lista de ejercicios actualizada", 
-            "data": response.data
+            "data": sanitize_user(response.data)
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -201,7 +200,7 @@ def clearEjercicio():
         return jsonify({
             "status": "success", 
             "message": "Lista de ejercicios actualizada", 
-            "data": response.data
+            "data": sanitize_user(response.data)
         }), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
@@ -460,7 +459,7 @@ def invitarAlumno():
 
     try:
 
-        already_invited = supabase.table("invitaciones").select("*").eq("email_alumno", email).eq("id_coach", id_coach).execute()
+        already_invited = supabase.table("invitaciones_alumno").select("*").eq("email_alumno", email).eq("id_coach", id_coach).execute()
 
         if already_invited.data:
             return jsonify({"status": "error", "message": "El alumno ya ha sido invitado por este coach"}), 400
@@ -475,15 +474,15 @@ def invitarAlumno():
         if not existing_user.data:
             return jsonify({"status": "error", "message": "No existe un usuario registrado con ese email"}), 400
 
-        response = supabase.table("invitaciones").insert({"id_coach": id_coach, "email_alumno": email}).execute()
+        response = supabase.table("invitaciones_alumno").insert({"id_coach": id_coach, "email_alumno": email}).execute()
         inserted = response.data[0] if response.data else {}
         return jsonify({"status": "success", "message": "Alumno invitado correctamente", "data": sanitize_user(inserted)}), 201
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
 
-@app.route('/venus/aceptarInvitacion', methods=['POST'])
-def aceptarInvitacion():
+@app.route('/venus/aceptarInvitacionAlumno', methods=['POST'])
+def aceptarInvitacionAlumno():
     data = request.get_json()
     id_coach = data.get("id_coach")
     email_alumno = data.get("email_alumno")
@@ -497,7 +496,7 @@ def aceptarInvitacion():
         inserted = response.data[0] if response.data else {}
 
         if(inserted):
-            supabase.table("invitaciones").delete()\
+            supabase.table("invitaciones_alumno").delete()\
                 .eq("id_coach", id_coach)\
                 .eq("email_alumno", email_alumno)\
                 .execute()
@@ -510,8 +509,8 @@ def aceptarInvitacion():
 
 
     
-@app.route('/venus/getInvitaciones', methods=['POST'])
-def get_invitaciones():
+@app.route('/venus/getInvitacionesAlumno', methods=['POST'])
+def get_invitaciones_alumno():
     data = request.get_json()
     email = data.get("email")
 
@@ -519,7 +518,7 @@ def get_invitaciones():
         return jsonify({"status": "error", "message": "Falta el email"}), 400
 
     try:
-        invitations = supabase.table("invitaciones") \
+        invitations = supabase.table("invitaciones_alumno") \
             .select("*") \
             .eq("email_alumno", email) \
             .execute()
@@ -548,6 +547,218 @@ def get_invitaciones():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
+    
+
+
+# ==========================================
+# AMIGOS
+# ==========================================
+
+
+@app.route('/venus/invitarAmigo', methods=['POST'])
+def invitarAmigo():
+    data = request.get_json()
+    id_invitador = data.get("id_invitador")
+    email_invitado = data.get("email_invitado")
+
+    if not id_invitador or not email_invitado:
+        return jsonify({"status": "error", "message": "Faltan id_invitador o email_invitado"}), 400
+
+    try:
+        existing_user = supabase.table("usuarios").select("*").eq("email", email_invitado).execute()
+
+        if not existing_user.data:
+            return jsonify({"status": "error", "message": "No existe un usuario registrado con ese email"}), 400
+
+        id_invitado = existing_user.data[0].get("id")
+
+        already_invited = supabase.table("invitaciones_amigo") \
+            .select("*") \
+            .eq("email_invitado", email_invitado) \
+            .eq("id_invitador", id_invitador) \
+            .execute()
+
+        if already_invited.data:
+            return jsonify({"status": "error", "message": "El amigo ya ha sido invitado"}), 400
+
+        already_friends_forward = supabase.table("amistades") \
+            .select("*") \
+            .eq("id_amigo1", id_invitador) \
+            .eq("id_amigo2", id_invitado) \
+            .execute()
+
+        already_friends_reverse = supabase.table("amistades") \
+            .select("*") \
+            .eq("id_amigo1", id_invitado) \
+            .eq("id_amigo2", id_invitador) \
+            .execute()
+
+        if already_friends_forward.data or already_friends_reverse.data:
+            return jsonify({"status": "error", "message": "Ya son amigos"}), 400
+
+        response = supabase.table("invitaciones_amigo").insert({"id_invitador": id_invitador, "email_invitado": email_invitado}).execute()
+        inserted = response.data[0] if response.data else {}
+        return jsonify({"status": "success", "message": "Amigo invitado correctamente", "data": inserted}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+
+@app.route('/venus/getInvitacionesAmigo', methods=['POST'])
+def get_invitaciones_amigo():
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"status": "error", "message": "Falta el email"}), 400
+
+    try:
+        invitations = supabase.table("invitaciones_amigo") \
+            .select("*") \
+            .eq("email_invitado", email) \
+            .execute()
+
+        if not invitations.data:
+            return jsonify({"status": "success", "data": []}), 200
+
+        result = []
+        for invitation in invitations.data:
+            invitador_response = supabase.table("usuarios") \
+                .select("email") \
+                .eq("id", invitation.get("id_invitador")) \
+                .execute()
+            
+            if invitador_response.data:
+                result.append({
+                    "id_invitacion": invitation.get("id_invitacion"),
+                    "id_invitador": invitation.get("id_invitador"),
+                    "invitador_email": invitador_response.data[0].get("email"),
+                })
+
+        return jsonify({
+            "status": "success",
+            "data": result
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    
+
+
+@app.route('/venus/aceptarInvitacionAmigo', methods=['POST'])
+def aceptarInvitacionAmigo():
+    data = request.get_json()
+    id_invitador = data.get("id_invitador")
+    id_invitado = data.get("id_invitado")
+    email_invitado = data.get("email_invitado")
+
+    if not id_invitador or not id_invitado or not email_invitado:
+        return jsonify({"status": "error", "message": "Faltan id_invitador, id_invitado o email_invitado"}), 400
+
+    try:
+        already_friends_forward = supabase.table("amistades") \
+            .select("*") \
+            .eq("id_amigo1", id_invitador) \
+            .eq("id_amigo2", id_invitado) \
+            .execute()
+
+        already_friends_reverse = supabase.table("amistades") \
+            .select("*") \
+            .eq("id_amigo1", id_invitado) \
+            .eq("id_amigo2", id_invitador) \
+            .execute()
+
+        if already_friends_forward.data or already_friends_reverse.data:
+            supabase.table("invitaciones_amigo").delete() \
+                .eq("id_invitador", id_invitador) \
+                .eq("email_invitado", email_invitado) \
+                .execute()
+            return jsonify({"status": "success", "message": "Ya son amigos", "data": []}), 200
+
+        response = supabase.table("amistades").insert({"id_amigo1": id_invitador, "id_amigo2": id_invitado}).execute()
+        inserted = response.data[0] if response.data else {}
+
+        if inserted:
+            supabase.table("invitaciones_amigo").delete() \
+                .eq("id_invitador", id_invitador) \
+                .eq("email_invitado", email_invitado) \
+                .execute()
+
+        return jsonify({"status": "success", "message": "Relación amigo aceptada correctamente", "data": inserted}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+
+@app.route('/venus/getAmigos', methods=['POST'])
+def getAmigos():
+    data = request.get_json()  
+    id_usuario = data.get("id_usuario")
+
+    if not id_usuario:
+        return jsonify({"status": "error", "message": "Falta el ID del usuario"}), 400
+
+    try:
+        response1 = supabase.table("amistades") \
+            .select("id_amigo2") \
+            .eq("id_amigo1", id_usuario) \
+            .execute()
+        
+        response2 = supabase.table("amistades") \
+            .select("id_amigo1") \
+            .eq("id_amigo2", id_usuario) \
+            .execute()
+        
+        amigos_ids = response1.data + response2.data
+        amigos_ids = [item.get("id_amigo2") for item in response1.data] + [item.get("id_amigo1") for item in response2.data]
+        
+        if not amigos_ids:
+            return jsonify({
+                "status": "success", 
+                "message": "No se encontraron amigos", 
+                "data": []
+            }), 200
+        
+        amigos_response = supabase.table("usuarios") \
+            .select("*") \
+            .in_("id", amigos_ids) \
+            .execute()
+
+        amigos = [sanitize_user(item) for item in amigos_response.data or []]
+        
+        # Respuesta exitosa
+        return jsonify({
+            "status": "success", 
+            "message": f"Se encontraron {len(amigos)} amigos", 
+            "data": amigos
+        }), 200
+
+    except Exception as e:
+        # Captura de errores (Base de datos, conexión, etc.)
+        return jsonify({
+            "status": "error", 
+            "message": f"Error en el servidor: {str(e)}"
+        }), 500
+    
+
+@app.route('/venus/deleteAmigo', methods=['POST'])
+def deleteAmigo():
+    data = request.get_json()
+    id_usuario = data.get("id_usuario")
+    id_amigo = data.get("id_amigo")
+    
+    try:
+        response1 = supabase.table("amistades").delete()\
+            .eq("id_amigo1", id_usuario)\
+            .eq("id_amigo2", id_amigo)\
+            .execute()
+        response2 = supabase.table("amistades").delete()\
+            .eq("id_amigo2", id_usuario)\
+            .eq("id_amigo1", id_amigo)\
+            .execute()
+        return jsonify({"status": "success", "message": "Amigo eliminado correctamente"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
 
 
 if __name__ == '__main__':
